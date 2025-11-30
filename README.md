@@ -20,17 +20,17 @@
 
 - 🎵 create satisfying melodies... [Medodia.ai](https://melodia-ai.onrender.com)
 
-- 👨‍💻 All of my projects are available at [https://ppranavai.netlify.app](https://ppranavai.netlify.app)
+- 👨‍💻 All of my projects are available at: [https://ppranavai.netlify.app](https://ppranavai.netlify.app)
 
 - 📝 Read my research paper here... [https://www.researchgate.net/publication/396192440_Agentic_AI_Towards_Autonomous_and_Responsible_Artificial_Intelligence#fullTextFileContent](https://www.researchgate.net/publication/396192440_Agentic_AI_Towards_Autonomous_and_Responsible_Artificial_Intelligence#fullTextFileContent)
 
-- 💬 Ask me about **Python, AI/ML, Prompts, Generative AI, LLMs, Agents, GPTs**
+- 💬 Ask me about: **Python, AI/ML, Prompts, Generative AI, LLMs, Agents, GPTs**
 
-- 📫 How to reach me **patilpr003@gmail.com**
+- 📫 How to reach me **pranavp4.work@gmail.com**
 
 - 📄 Have a look on my certifications! [https://vrbeirer.github.io/Global_certifications/](https://vrbeirer.github.io/Global_certifications/)
 
-- ⚡ Fun fact **I use AI even to choose what to eat**
+- ⚡ Fun fact: **I use AI even to choose what to eat**
 
 <h3 align="left">Connect with me:</h3>
 <p align="left">
