@@ -3,7 +3,7 @@
 <img align="right" alt="Coding" width="400" src="https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWV3a254bXBqNndvM3lhcm54MDN3bWdoMnZxbDU3bGpjdmJiMHB0YyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif">
 <p align="left"> <img src="https://komarev.com/ghpvc/?username=vrbeirer&label=Profile%20views&color=0e75b6&style=flat" alt="vrbeirer" /> </p>
 
-<p align="left"> <a href="https://github.com/ryo-ma/github-profile-trophy"><img src="https://github-profile-trophy.vercel.app/?username=vrbeirer" alt="vrbeirer" /></a> </p>
+<!-- <p align="left"> <a href="https://github.com/ryo-ma/github-profile-trophy"><img src="https://github-profile-trophy.vercel.app/?username=vrbeirer" alt="vrbeirer" /></a> </p> -->
 
 - 🌱 Meet farmers best friend! [Krishi.ai](https://krishi-ai-b358.onrender.com)
 
