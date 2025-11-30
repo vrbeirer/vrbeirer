@@ -4,7 +4,7 @@
 
 
 <h1 align="center">Hey 👋, I'm pranav</h1>
-<h3 align="center">Gen-AI developer and prompt engineer from India</h3>
+<h3 align="center">I build practical tools with Gen-AI, LLMs, and prompt engineering - from India</h3>
 
 <p align="left"> <a href="https://github.com/ryo-ma/github-profile-trophy"><img src="https://github-profile-trophy.vercel.app/?username=vrbeirer" alt="vrbeirer" /></a> </p> 
 
