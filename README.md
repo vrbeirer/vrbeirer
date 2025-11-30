@@ -1,5 +1,5 @@
-[![MasterHead]([!("<img width="1000" height="640" alt="image" src="https://github.com/user-attachments/assets/6e739d51-d289-4cea-b387-ea9d1dadd759" />
-"))
+[![MasterHead](https://github.com/user-attachments/assets/b4b4e347-cf1a-42cb-bf15-9429c67b8e91)]()
+
 
 <h1 align="center">Hey 👋, I'm pranav</h1>
 <h3 align="center">Gen-AI developer and prompt engineer from India</h3>
