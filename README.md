@@ -1,4 +1,5 @@
-[![MasterHead]([!(https://1.bp.blogspot.com/-7A4WynwLsMw/XbBpCXG8fHI/AAAAAAAAMt4/uOa1bpLskYgrwGbllhSu2SDj_Mig8SXJQCLcBGAsYHQ/s1600/2000_600px.gif)](https://rishavchanda.io))
+[![MasterHead]([!("<img width="1000" height="640" alt="image" src="https://github.com/user-attachments/assets/6e739d51-d289-4cea-b387-ea9d1dadd759" />
+"))
 
 <h1 align="center">Hey 👋, I'm pranav</h1>
 <h3 align="center">Gen-AI developer and prompt engineer from India</h3>
