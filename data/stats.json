@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-11-13T00:00:00Z",
+  "month_labels": ["Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"],
+  "monthly_contributions": [42, 65, 58, 73, 90, 110, 134, 121, 98, 143, 160, 87],
+  "current_streak": 23,
+  "active_days": 214,
+  "busiest_day": "Wednesday",
+  "daily_grid": null
+}

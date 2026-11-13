@@ -1,0 +1,51 @@
+{
+  "name": "Pranav Patil",
+  "tagline": "I build practical tools with Gen-AI, LLMs and prompt engineering, from India",
+  "portrait": "assets/portrait.png",
+  "links": [
+    {
+      "label": "PORTFOLIO",
+      "headline": "Explore my work",
+      "description": "Projects, experience and writing, all in one place.",
+      "url": "https://pranavp-portfolio.vercel.app/"
+    },
+    {
+      "label": "CONNECT",
+      "headline": "Let's connect",
+      "description": "Open to GenAI and AI engineering roles, message me anytime.",
+      "url": "https://www.linkedin.com/in/patil04"
+    },
+    {
+      "label": "LEARN",
+      "headline": "Certifications",
+      "description": "All my completed courses and credentials, verified.",
+      "url": "https://vrbeirer.github.io/Global_certifications/"
+    }
+  ],
+  "featured_repos": [
+    {
+      "name": "Krishi.ai",
+      "description": "Multilingual farming assistant chatbot, built for real-time crop guidance.",
+      "stack": "Flask \u00b7 Gemini API \u00b7 OpenRouter \u00b7 React.js",
+      "url": "https://github.com/vrbeirer/krishi_ai"
+    },
+    {
+      "name": "Lumiere",
+      "description": "Production RAG chatbot with history-aware retrieval and a recursive site crawler, 90%+ retrieval accuracy.",
+      "stack": "Flask \u00b7 FAISS \u00b7 MiniLM \u00b7 LLaMA 3",
+      "url": "https://github.com/vrbeirer/Lumiere"
+    },
+    {
+      "name": "Patil Coldchain Intelligence",
+      "description": "Warehouse cold-chain monitoring dashboard with realistic simulated data, tracks temperature, humidity and door activity across zones and flags issues automatically.",
+      "stack": "Python \u00b7 Dashboard \u00b7 Simulated sensor data",
+      "url": "https://github.com/vrbeirer/coldchain-warehouse-monitor"
+    },
+    {
+      "name": "SalesCast",
+      "description": "XGBoost-powered sales forecaster with fuzzy product matching, delivering line-item projections through a Flask API.",
+      "stack": "XGBoost \u00b7 Scikit-learn \u00b7 Flask \u00b7 FuzzyWuzzy",
+      "url": "https://github.com/vrbeirer/salescast-ml"
+    }
+  ]
+}
