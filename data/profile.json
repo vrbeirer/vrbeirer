@@ -1,7 +1,11 @@
 {
-  "name": "Pranav Patil",
+  "name_line1": "Pranav",
+  "name_line2": "Patil",
+  "chip_label": "GENERATIVE AI ENGINEER",
   "tagline": "I build practical tools with Gen-AI, LLMs and prompt engineering, from India",
-  "portrait": "assets/portrait.png",
+  "website_label": "Website",
+  "website_url": "https://pranavp-portfolio.vercel.app/",
+  "ascii_art": "assets/ascii_art_src.png",
   "links": [
     {
       "label": "PORTFOLIO",

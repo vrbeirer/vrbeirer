@@ -19,7 +19,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install fonttools brotli pillow
+        run: pip install fonttools brotli pillow numpy
 
       - name: Refresh contribution stats
         env:

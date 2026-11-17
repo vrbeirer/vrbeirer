@@ -4,7 +4,7 @@ generate_cards.py
 
 Renders Pranav Patil's GitHub profile README as a stack of animated SVG
 cards, written into cards/. Each card is a self-contained SVG (inline CSS
-keyframes + SMIL <animate> + two embedded fonts) so it works when loaded
+keyframes + SMIL <animate> + embedded fonts) so it works when loaded
 through a plain <img> tag, which is how GitHub renders README images.
 
 Usage:
@@ -14,6 +14,12 @@ Usage:
 Data comes from two JSON files that a GitHub Action keeps fresh:
     data/profile.json  -> name, tagline, link tiles, featured repos (edited by hand)
     data/stats.json    -> contribution stats (written daily by fetch_stats.py)
+
+Note on links: an <a> tag INSIDE an svg does nothing once that svg is
+loaded as a plain <img> in a README (GitHub just paints the pixels).
+So every card here is still wrapped in a real <a href="..."> at the
+markdown level — see README_cards_snippet.md. The <a> tags inside the
+SVGs are kept too, in case someone opens the raw .svg file directly.
 """
 
 import base64
@@ -23,6 +29,7 @@ import os
 import random
 from pathlib import Path
 
+import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 from fontTools import subset
@@ -30,23 +37,26 @@ from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Config — colours and fonts live here so the whole look can be tweaked in
-# one place. Pulled from Pranav's "build / brand / learn" stat-tile reference
-# and his pranavp-portfolio.vercel.app theme (pure black background).
+# one place.
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).parent
 OUT_DIR = ROOT / "cards"
 
 SANS_FONT_PATH = ROOT / "fonts" / "Inter-Variable.ttf"
-SERIF_FONT_PATH = ROOT / "fonts" / "Lora-Italic-Variable.ttf"
+SERIF_ITALIC_FONT_PATH = ROOT / "fonts" / "Lora-Italic-Variable.ttf"
+SERIF_ROMAN_FONT_PATH = ROOT / "fonts" / "Lora-Roman-Variable.ttf"
 SANS_FAMILY = "Inter"
 SERIF_FAMILY = "Lora"
 
 BG = "#000000"        # matches the portfolio's theme-color
+CREAM = "#F5F1E8"      # hero light-mode card background
 PANEL = "#0a0a0a"
 BORDER = "#262626"
 TEXT = "#ffffff"
 MUTED = "#9ca3af"
+INK = "#15171c"        # dark text used on the cream hero card
+INK_MUTED = "#55585f"
 
 BLUE = "#2F55FF"
 RED = "#EF3B2D"
@@ -54,8 +64,13 @@ YELLOW = "#FFC81A"
 PALETTE = [BLUE, RED, YELLOW]  # cycled across tiles / repo cards
 
 STATIC = os.environ.get("STATIC") == "1"
-STAGGER_STEP = 0.35  # extra start-delay given to each card further down the page
+STAGGER_STEP = 0.5  # extra start-delay given to each card further down the page
+EASE = "0.16 1 0.3 1"  # ease-out spline, used on every animate() call
 
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
 
 def text_on(bg_hex: str) -> str:
     """Pick black or white text for readable contrast on a given background."""
@@ -63,10 +78,6 @@ def text_on(bg_hex: str) -> str:
     luminance = 0.299 * r + 0.587 * g + 0.114 * b
     return "#111111" if luminance > 150 else "#ffffff"
 
-
-# ---------------------------------------------------------------------------
-# Small helpers
-# ---------------------------------------------------------------------------
 
 def esc(text: str) -> str:
     """Escape text for safe use inside SVG/XML."""
@@ -147,8 +158,9 @@ def embed_image_b64(path_str: str, size: int = 220) -> str:
     path = ROOT / path_str
     if not path.exists():
         return ""
-    if path_str in _image_cache:
-        return _image_cache[path_str]
+    cache_key = ("photo", path_str, size)
+    if cache_key in _image_cache:
+        return _image_cache[cache_key]
 
     img = Image.open(path).convert("RGBA")
     w, h = img.size
@@ -159,7 +171,39 @@ def embed_image_b64(path_str: str, size: int = 220) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
-    _image_cache[path_str] = data_uri
+    _image_cache[cache_key] = data_uri
+    return data_uri
+
+
+def embed_ascii_art(path_str: str, ink_hex: str, size: int = 360) -> str:
+    """
+    Recolour a black-ink-on-white ASCII art image into a single ink colour
+    on a transparent background, so it drops cleanly onto either the cream
+    or the black hero card. Returns a base64 PNG data URI.
+    """
+    if not path_str:
+        return ""
+    path = ROOT / path_str
+    if not path.exists():
+        return ""
+    cache_key = ("ascii", path_str, ink_hex, size)
+    if cache_key in _image_cache:
+        return _image_cache[cache_key]
+
+    r, g, b = int(ink_hex[1:3], 16), int(ink_hex[3:5], 16), int(ink_hex[5:7], 16)
+    im = Image.open(path).convert("L").resize((size, size), Image.LANCZOS)
+    arr = np.array(im).astype(np.uint8)
+    alpha = 255 - arr  # dark ink in the source -> opaque; white background -> transparent
+
+    out = np.zeros((size, size, 4), dtype=np.uint8)
+    out[..., 0], out[..., 1], out[..., 2] = r, g, b
+    out[..., 3] = alpha
+    img = Image.fromarray(out, "RGBA")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    _image_cache[cache_key] = data_uri
     return data_uri
 
 
@@ -187,12 +231,13 @@ def reduced_motion_css(pins: str) -> str:
 
 
 def animate(attr: str, frm: str, to: str, dur: float, begin: float, fill="freeze") -> str:
-    """One SMIL <animate> tag. Skipped entirely in STATIC mode."""
+    """One SMIL <animate> tag, eased with a gentle ease-out spline. Skipped in STATIC mode."""
     if STATIC:
         return ""
     return (
         f'<animate attributeName="{attr}" from="{frm}" to="{to}" '
-        f'dur="{dur}s" begin="{begin}s" fill="{fill}" />'
+        f'dur="{dur}s" begin="{begin}s" fill="{fill}" '
+        f'calcMode="spline" keyTimes="0;1" keySplines="{EASE}" />'
     )
 
 
@@ -201,85 +246,163 @@ def static_or(final, during):
     return final if STATIC else during
 
 
+def reveal_wrap(inner: str, delay: float, rise: int = 16, dur: float = 0.7) -> str:
+    """
+    Wrap a whole card's content in one fade+rise entrance. Used so every
+    card gets the same smooth reveal, on top of whatever extra per-element
+    animation that card adds.
+    """
+    opacity = static_or("1", "0")
+    fade = animate("opacity", "0", "1", dur, delay)
+    move = animate(
+        "transform", f"translate(0,{rise})", "translate(0,0)", dur, delay
+    )
+    return (
+        f'<g class="card-reveal" opacity="{opacity}">{fade}{move}{inner}</g>'
+    )
+
+
+CARD_REVEAL_PIN = """
+      .card-reveal { opacity: 1 !important; transform: none !important; }
+    """
+
+
 # ---------------------------------------------------------------------------
-# Card: hero
+# Card: hero — a two-tone logotype card with the ASCII portrait on the
+# right, in the style of a "profile card" rather than a plain banner.
+# Rendered twice (light / dark) so the README can swap with
+# prefers-color-scheme the same way the old README did.
 # ---------------------------------------------------------------------------
 
-def render_hero(profile: dict, base_delay: float = 0.0) -> str:
-    name = profile["name"]
+def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
+    w, h = 800, 280
+    is_light = mode == "light"
+
+    bg = CREAM if is_light else BG
+    text_color = INK if is_light else TEXT
+    muted_color = INK_MUTED if is_light else MUTED
+    chip_bg = "#E7ECFF" if is_light else "#131a33"
+    ascii_ink = INK if is_light else "#e8eaf0"
+
+    chip_label = profile["chip_label"]
+    name1 = profile["name_line1"]
+    name2 = profile["name_line2"]
     tagline = profile["tagline"]
-    w, h = 800, 220
+    website_label = profile["website_label"]
+    website_url = profile["website_url"]
 
-    font_css = font_face_css(name + tagline, SANS_FONT_PATH, SANS_FAMILY, 700)
-    font_css += font_face_css(name + tagline, SANS_FONT_PATH, SANS_FAMILY, 400)
+    all_text = chip_label + name1 + name2 + tagline + website_label
+    font_css = font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 700)
+    font_css += font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 500)
+    font_css += font_face_css(name1, SERIF_ROMAN_FONT_PATH, SERIF_FAMILY + "-Roman", 600)
+    font_css += font_face_css(name2, SERIF_ITALIC_FONT_PATH, SERIF_FAMILY + "-Italic", 600)
 
-    title_opacity = static_or("1", "0")
-    title_anim = animate("opacity", "0", "1", 0.6, base_delay)
-    title_dy = animate("transform", "translate(0,10)", "translate(0,0)", 0.6, base_delay)
+    ascii_data = embed_ascii_art(profile.get("ascii_art", ""), ascii_ink)
 
-    tag_opacity = static_or("1", "0")
-    tag_anim = animate("opacity", "0", "1", 0.6, base_delay + 0.25)
+    # staggered entrance: chip -> name line 1 -> name line 2 -> tagline -> link -> art
+    d0 = base_delay
+    d1 = base_delay + 0.15
+    d2 = base_delay + 0.30
+    d3 = base_delay + 0.48
+    d4 = base_delay + 0.62
+    d5 = base_delay + 0.25
 
-    underline_len = static_or("0", "120")
-    underline_anim = animate("stroke-dashoffset", "120", "0", 0.7, base_delay + 0.15)
+    def fade_rise(delay, rise=12, dur=0.6):
+        op = static_or("1", "0")
+        f = animate("opacity", "0", "1", dur, delay)
+        m = animate("transform", f"translate(0,{rise})", "translate(0,0)", dur, delay)
+        return op, f, m
 
-    portrait_r = static_or("46", "0")
-    portrait_anim = animate("r", "0", "46", 0.5, base_delay + 0.1)
+    chip_op, chip_f, chip_m = fade_rise(d0, 8)
+    n1_op, n1_f, n1_m = fade_rise(d1, 16)
+    n2_op, n2_f, n2_m = fade_rise(d2, 16)
+    tag_op, tag_f, tag_m = fade_rise(d3, 10)
+    link_op, link_f, link_m = fade_rise(d4, 8)
 
-    portrait_data = embed_image_b64(profile.get("portrait", ""))
+    art_op = static_or("1", "0")
+    art_fade = animate("opacity", "0", "1", 0.9, d5)
+    art_scale_from = "scale(0.94)"
+    art_anim = animate("transform", art_scale_from, "scale(1)", 0.9, d5)
 
     svg = []
     svg.append(svg_open(w, h))
     svg.append(f"<style>{font_css}")
     svg.append(
         """
-        .title { font-size: 34px; font-weight: 700; fill: %s; }
-        .tagline { font-size: 16px; font-weight: 400; fill: %s; }
-        .underline { stroke: %s; stroke-width: 3; }
-        .ring { stroke: %s; stroke-width: 2; fill: none; }
+        .chip-dot { fill: %s; }
+        .chip-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; fill: %s; }
+        .name1 { font-family: '%s-Roman', Georgia, serif; font-size: 52px; font-weight: 600; fill: %s; }
+        .name2 { font-family: '%s-Italic', Georgia, serif; font-style: italic; font-size: 52px; font-weight: 600; fill: %s; }
+        .tagline { font-size: 15px; font-weight: 500; fill: %s; }
+        .website { font-size: 14px; font-weight: 700; fill: %s; }
+        @keyframes nudge {
+          0%%, 100%% { transform: translate(0,0); }
+          50%% { transform: translate(4px,0); }
+        }
+        .link-arrow { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (TEXT, MUTED, BLUE, YELLOW)
+        % (
+            BLUE, BLUE,
+            SERIF_FAMILY, text_color,
+            SERIF_FAMILY, text_color,
+            muted_color,
+            BLUE,
+            d4 + 0.6,
+        )
     )
     svg.append(
         reduced_motion_css(
-            f"""
-      .title {{ opacity: 1 !important; transform: none !important; }}
-      .tagline {{ opacity: 1 !important; }}
-      .underline {{ stroke-dashoffset: 0 !important; }}
-      .portrait-ring {{ r: 46 !important; }}
+            CARD_REVEAL_PIN
+            + """
+      .link-arrow { transform: none !important; }
     """
         )
     )
     svg.append("</style>")
 
-    svg.append(f'<rect width="{w}" height="{h}" fill="{BG}" rx="14" />')
+    svg.append(f'<rect width="{w}" height="{h}" fill="{bg}" rx="18" />')
 
-    text_x = 40
-    if portrait_data:
-        cx, cy = 100, h // 2
-        svg.append(f'<clipPath id="pclip"><circle cx="{cx}" cy="{cy}" r="44" /></clipPath>')
-        svg.append(
-            f'<image href="{portrait_data}" x="{cx-44}" y="{cy-44}" '
-            f'width="88" height="88" clip-path="url(#pclip)" preserveAspectRatio="xMidYMid slice" />'
-        )
-        svg.append(
-            f'<circle class="ring portrait-ring" cx="{cx}" cy="{cy}" r="{portrait_r}">'
-            f"{portrait_anim}</circle>"
-        )
-        text_x = 180
+    left_x = 48
+    content = []
 
-    svg.append(
-        f'<text class="title" x="{text_x}" y="90" opacity="{title_opacity}">'
-        f"{esc(name)}{title_anim}{title_dy}</text>"
+    content.append(
+        f'<g opacity="{chip_op}">{chip_f}{chip_m}'
+        f'<rect class="chip-dot" x="{left_x}" y="38" width="7" height="7" rx="2" />'
+        f'<text class="chip-label" x="{left_x+16}" y="45">{esc(chip_label)}</text>'
+        f"</g>"
     )
-    svg.append(
-        f'<line class="underline" x1="{text_x}" y1="108" x2="{text_x+120}" y2="108" '
-        f'stroke-dasharray="120" stroke-dashoffset="{underline_len}">{underline_anim}</line>'
+    content.append(
+        f'<text class="name1" x="{left_x-3}" y="112" opacity="{n1_op}">'
+        f"{esc(name1)}{n1_f}{n1_m}</text>"
     )
-    svg.append(
-        f'<text class="tagline" x="{text_x}" y="140" opacity="{tag_opacity}">'
-        f"{esc(tagline)}{tag_anim}</text>"
+    content.append(
+        f'<text class="name2" x="{left_x-3}" y="168" opacity="{n2_op}">'
+        f"{esc(name2)}{n2_f}{n2_m}</text>"
     )
+    content.append(
+        f'<text class="tagline" x="{left_x}" y="205" opacity="{tag_op}">'
+        f"{wrap_tspan(tagline, left_x, 205, 46, 2)}{tag_f}{tag_m}</text>"
+    )
+    content.append(
+        f'<a href="{esc(website_url)}" target="_blank">'
+        f'<g opacity="{link_op}">{link_f}{link_m}'
+        f'<text class="website" x="{left_x}" y="248">{esc(website_label)}'
+        f'<tspan class="link-arrow"> \u2192</tspan></text>'
+        f"</g></a>"
+    )
+
+    if ascii_data:
+        art_size = 220
+        art_x, art_y = w - art_size - 36, (h - art_size) // 2
+        content.append(
+            f'<g opacity="{art_op}" style="transform-origin: {art_x+art_size/2}px {art_y+art_size/2}px;">'
+            f"{art_fade}{art_anim}"
+            f'<image href="{ascii_data}" x="{art_x}" y="{art_y}" '
+            f'width="{art_size}" height="{art_size}" />'
+            f"</g>"
+        )
+
+    svg.extend(content)
     svg.append("</svg>")
     return "".join(svg)
 
@@ -299,15 +422,21 @@ def render_tile(link: dict, index: int, base_delay: float = 0.0) -> str:
     url = link["url"]
     color = PALETTE[index % len(PALETTE)]
     fg = text_on(color)
-    delay = base_delay + index * 0.12
+    delay = base_delay + index * 0.15
 
     font_css = font_face_css(label + desc, SANS_FONT_PATH, SANS_FAMILY, 700)
     font_css += font_face_css(label + desc, SANS_FONT_PATH, SANS_FAMILY, 500)
-    font_css += font_face_css(headline, SERIF_FONT_PATH, SERIF_FAMILY, 500)
+    font_css += font_face_css(headline, SERIF_ITALIC_FONT_PATH, SERIF_FAMILY, 500)
 
-    opacity = static_or("1", "0")
-    rise = animate("transform", "translate(0,14)", "translate(0,0)", 0.5, delay)
-    fade = animate("opacity", "0", "1", 0.5, delay)
+    body = (
+        f'<rect class="tile-bg" x="0" y="0" width="{w}" height="{h}" rx="18" />'
+        f'<text class="tile-label" x="24" y="34">{esc(label)}</text>'
+        f'<g class="arrow-g"><text class="arrow" x="{w-36}" y="34">\u2192</text></g>'
+        f'<text class="tile-headline" x="24" y="100">{esc(headline)}</text>'
+        f'<text class="tile-desc" x="24" y="{h-40}">'
+        + wrap_tspan(desc, 24, h - 40, 34, 2)
+        + "</text>"
+    )
 
     svg = []
     svg.append(svg_open(w, h))
@@ -325,30 +454,19 @@ def render_tile(link: dict, index: int, base_delay: float = 0.0) -> str:
         }
         .arrow-g { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (color, fg, SERIF_FAMILY, fg, fg, fg, delay)
+        % (color, fg, SERIF_FAMILY, fg, fg, fg, delay + 0.8)
     )
     svg.append(
         reduced_motion_css(
-            """
-      .tile-wrap { opacity: 1 !important; transform: none !important; }
+            CARD_REVEAL_PIN
+            + """
       .arrow-g { transform: none !important; }
     """
         )
     )
     svg.append("</style>")
 
-    svg.append(
-        f'<a href="{esc(url)}" target="_blank">'
-        f'<g class="tile-wrap" opacity="{opacity}">{fade}{rise}'
-        f'<rect class="tile-bg" x="0" y="0" width="{w}" height="{h}" rx="18" />'
-        f'<text class="tile-label" x="24" y="34">{esc(label)}</text>'
-        f'<g class="arrow-g"><text class="arrow" x="{w-36}" y="34">\u2192</text></g>'
-        f'<text class="tile-headline" x="24" y="100">{esc(headline)}</text>'
-        f'<text class="tile-desc" x="24" y="{h-40}">'
-        + wrap_tspan(desc, 24, h - 40, 34, 2)
-        + "</text>"
-        f"</g></a>"
-    )
+    svg.append(f'<a href="{esc(url)}" target="_blank">' + reveal_wrap(body, delay) + "</a>")
     svg.append("</svg>")
     return "".join(svg)
 
@@ -405,11 +523,11 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
         x = chart_left + i * (bar_w + bar_gap)
         bar_h = (v / max_v) * (chart_bottom - chart_top)
         y = chart_bottom - bar_h
-        delay = base_delay + i * 0.05
+        delay = base_delay + 0.3 + i * 0.06
         h_final = static_or(str(bar_h), "0")
         y_final = static_or(str(y), str(chart_bottom))
-        h_anim = animate("height", "0", str(bar_h), 0.5, delay)
-        y_anim = animate("y", str(chart_bottom), str(y), 0.5, delay)
+        h_anim = animate("height", "0", str(bar_h), 0.6, delay)
+        y_anim = animate("y", str(chart_bottom), str(y), 0.6, delay)
         bars.append(
             f'<rect class="bar" x="{x:.1f}" y="{y_final}" width="{bar_w:.1f}" '
             f'height="{h_final}" rx="3">{h_anim}{y_anim}</rect>'
@@ -419,9 +537,32 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
             f'text-anchor="middle">{esc(m)}</text>'
         )
 
-    stat_delay = base_delay + 0.6
+    stat_delay = base_delay + 0.9
     stat_opacity = static_or("1", "0")
-    stat_anim = animate("opacity", "0", "1", 0.5, stat_delay)
+    stat_fade = animate("opacity", "0", "1", 0.6, stat_delay)
+    stat_rise = animate("transform", "translate(0,10)", "translate(0,0)", 0.6, stat_delay)
+
+    title_op = static_or("1", "0")
+    title_fade = animate("opacity", "0", "1", 0.5, base_delay)
+
+    body = []
+    body.append(
+        f'<text class="card-title" x="40" y="28" opacity="{title_op}">'
+        f"Contributions per month{title_fade}</text>"
+    )
+    body.extend(bars)
+    body.extend(labels)
+
+    stat_x = [40, 300, 560]
+    stat_titles = ["Current streak", "Active days", "Busiest day"]
+    stat_values = [f"{streak} days \U0001f525", str(active_days), busiest]
+    stat_colors = [RED, YELLOW, BLUE]
+    body.append(f'<g class="stat-group" opacity="{stat_opacity}">{stat_fade}{stat_rise}')
+    for x, title, val, color in zip(stat_x, stat_titles, stat_values, stat_colors):
+        cls = "stat-num streak-flame" if "streak" in title.lower() else "stat-num"
+        body.append(f'<text class="{cls}" x="{x}" y="250" fill="{color}">{esc(val)}</text>')
+        body.append(f'<text class="stat-label" x="{x}" y="270">{esc(title)}</text>')
+    body.append("</g>")
 
     svg = []
     svg.append(svg_open(w, h))
@@ -439,34 +580,20 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
         }
         .streak-flame { animation: pulse 1.8s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (BLUE, MUTED, MUTED, TEXT, stat_delay)
+        % (BLUE, MUTED, MUTED, TEXT, stat_delay + 0.8)
     )
     svg.append(
         reduced_motion_css(
             """
-      .stat-group { opacity: 1 !important; }
+      .stat-group { opacity: 1 !important; transform: none !important; }
       .streak-flame { opacity: 1 !important; }
+      .card-title { opacity: 1 !important; }
     """
         )
     )
     svg.append("</style>")
     svg.append(f'<rect width="{w}" height="{h}" fill="{BG}" rx="14" />')
-    svg.append('<text class="card-title" x="40" y="28">Contributions per month</text>')
-    svg.extend(bars)
-    svg.extend(labels)
-
-    stat_x = [40, 300, 560]
-    stat_titles = ["Current streak", "Active days", "Busiest day"]
-    stat_values = [f"{streak} days \U0001f525", str(active_days), busiest]
-    stat_colors = [RED, YELLOW, BLUE]
-    svg.append(f'<g class="stat-group" opacity="{stat_opacity}">{stat_anim}')
-    for x, title, val, color in zip(stat_x, stat_titles, stat_values, stat_colors):
-        cls = "stat-num streak-flame" if "streak" in title.lower() else "stat-num"
-        svg.append(
-            f'<text class="{cls}" x="{x}" y="250" fill="{color}">{esc(val)}</text>'
-        )
-        svg.append(f'<text class="stat-label" x="{x}" y="270">{esc(title)}</text>')
-    svg.append("</g>")
+    svg.extend(body)
     svg.append("</svg>")
     return "".join(svg)
 
@@ -482,14 +609,20 @@ def render_repo_card(repo: dict, index: int, base_delay: float = 0.0) -> str:
     stack = repo["stack"]
     url = repo["url"]
     color = PALETTE[index % len(PALETTE)]
-    delay = base_delay + index * 0.2
+    delay = base_delay + index * 0.22
 
     font_css = font_face_css(name + desc + stack, SANS_FONT_PATH, SANS_FAMILY, 700)
     font_css += font_face_css(name + desc + stack, SANS_FONT_PATH, SANS_FAMILY, 400)
 
-    opacity = static_or("1", "0")
-    slide = animate("transform", "translate(-20,0)", "translate(0,0)", 0.5, delay)
-    fade = animate("opacity", "0", "1", 0.5, delay)
+    body = (
+        f'<rect class="repo-bg" x="2" y="2" width="{w-4}" height="{h-4}" rx="14" />'
+        f'<rect class="accent-bar" x="2" y="2" width="6" height="{h-4}" rx="3" />'
+        f'<text class="repo-name" x="40" y="48">{esc(name)}</text>'
+        f'<text class="repo-desc" x="40" y="78">'
+        + wrap_tspan(desc, 40, 78, 95, 2)
+        + "</text>"
+        f'<text class="repo-stack" x="40" y="124">{esc(stack)}</text>'
+    )
 
     svg = []
     svg.append(svg_open(w, h))
@@ -507,30 +640,19 @@ def render_repo_card(repo: dict, index: int, base_delay: float = 0.0) -> str:
         }
         .accent-bar { animation: drift 2.6s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (PANEL, BORDER, TEXT, MUTED, color, color, delay)
+        % (PANEL, BORDER, TEXT, MUTED, color, color, delay + 0.7)
     )
     svg.append(
         reduced_motion_css(
-            """
-      .repo-wrap { opacity: 1 !important; transform: none !important; }
+            CARD_REVEAL_PIN
+            + """
       .accent-bar { opacity: 1 !important; }
     """
         )
     )
     svg.append("</style>")
 
-    svg.append(
-        f'<a href="{esc(url)}" target="_blank">'
-        f'<g class="repo-wrap" opacity="{opacity}">{fade}{slide}'
-        f'<rect class="repo-bg" x="2" y="2" width="{w-4}" height="{h-4}" rx="14" />'
-        f'<rect class="accent-bar" x="2" y="2" width="6" height="{h-4}" rx="3" />'
-        f'<text class="repo-name" x="40" y="48">{esc(name)}</text>'
-        f'<text class="repo-desc" x="40" y="78">'
-        + wrap_tspan(desc, 40, 78, 95, 2)
-        + "</text>"
-        f'<text class="repo-stack" x="40" y="124">{esc(stack)}</text>'
-        f"</g></a>"
-    )
+    svg.append(f'<a href="{esc(url)}" target="_blank">' + reveal_wrap(body, delay, rise=14) + "</a>")
     svg.append("</svg>")
     return "".join(svg)
 
@@ -568,13 +690,16 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
         x = origin_x + week * (cell + gap)
         y = origin_y + day * (cell + gap)
         level = min(4, round((v / max_v) * 4))
-        delay = base_delay + week * 0.015
+        delay = base_delay + 0.3 + week * 0.018
         opacity = static_or("1", "0")
-        fade = animate("opacity", "0", "1", 0.4, delay)
+        fade = animate("opacity", "0", "1", 0.45, delay)
         cells.append(
             f'<rect class="cell lvl{level}" x="{x}" y="{y}" width="{cell}" '
             f'height="{cell}" rx="2" opacity="{opacity}">{fade}</rect>'
         )
+
+    title_op = static_or("1", "0")
+    title_fade = animate("opacity", "0", "1", 0.5, base_delay)
 
     svg = []
     svg.append(svg_open(w, h))
@@ -595,12 +720,16 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
         reduced_motion_css(
             """
       .cell { opacity: 1 !important; }
+      .cg-title { opacity: 1 !important; }
     """
         )
     )
     svg.append("</style>")
     svg.append(f'<rect width="{w}" height="{h}" fill="{BG}" rx="14" />')
-    svg.append('<text class="cg-title" x="30" y="18">Contribution activity</text>')
+    svg.append(
+        f'<text class="cg-title" x="30" y="18" opacity="{title_op}">'
+        f"Contribution activity{title_fade}</text>"
+    )
     svg.extend(cells)
 
     legend_x = w - 160
@@ -635,7 +764,12 @@ def main():
     OUT_DIR.mkdir(exist_ok=True)
 
     delay = 0.0
-    (OUT_DIR / "hero.svg").write_text(render_hero(profile, delay), encoding="utf-8")
+    (OUT_DIR / "hero_light.svg").write_text(
+        render_hero(profile, "light", delay), encoding="utf-8"
+    )
+    (OUT_DIR / "hero_dark.svg").write_text(
+        render_hero(profile, "dark", delay), encoding="utf-8"
+    )
 
     delay += STAGGER_STEP
     for i, link in enumerate(profile["links"][:3]):
@@ -653,7 +787,7 @@ def main():
             render_repo_card(repo, i, delay), encoding="utf-8"
         )
 
-    delay += STAGGER_STEP + 0.2 * len(profile["featured_repos"])
+    delay += STAGGER_STEP + 0.22 * len(profile["featured_repos"])
     (OUT_DIR / "contrib_graph.svg").write_text(
         render_contrib_graph(stats, delay), encoding="utf-8"
     )
