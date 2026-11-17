@@ -276,6 +276,7 @@ CARD_REVEAL_PIN = """
 
 def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     w, h = 800, 280
+    left_x = 48
     is_light = mode == "light"
 
     bg = CREAM if is_light else BG
@@ -324,30 +325,82 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     art_scale_from = "scale(0.94)"
     art_anim = animate("transform", art_scale_from, "scale(1)", 0.9, d5)
 
+    # gradient accent bar under the name — draws in once, then idles
+    bar_w_final = 90
+    bar_w_now = static_or(str(bar_w_final), "0")
+    bar_delay = d3
+    bar_anim = animate("width", "0", str(bar_w_final), 0.7, bar_delay)
+
+    art_size = 220
+    art_x, art_y = w - art_size - 36, (h - art_size) // 2
+    art_cx, art_cy = art_x + art_size / 2, art_y + art_size / 2
+
+    # soft floating colour blobs behind the ascii art, each on its own slow loop
+    blob_specs = [
+        (BLUE, art_x - 25, art_y - 25, 65, 4.6, 0.0),
+        (RED, art_x + art_size + 15, art_y + art_size + 10, 55, 5.4, 0.6),
+        (YELLOW, art_x - 15, art_y + art_size + 25, 50, 5.0, 1.1),
+    ]
+    blobs = []
+    for color, bx, by, br, dur, phase in blob_specs:
+        blob_anim = "" if STATIC else (
+            f'<animateTransform attributeName="transform" type="translate" '
+            f'values="0,0; 0,-10; 0,0" keyTimes="0;0.5;1" dur="{dur}s" '
+            f'begin="{d5 + phase}s" repeatCount="indefinite" '
+            f'calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" />'
+        )
+        blobs.append(
+            f'<g class="blob">{blob_anim}'
+            f'<circle cx="{bx}" cy="{by}" r="{br}" fill="{color}" opacity="0.16" />'
+            f"</g>"
+        )
+
+    # pulsing "live" ring around the chip dot
+    ping_cx, ping_cy = left_x + 3.5, 41.5
+    ping = "" if STATIC else (
+        f'<circle class="chip-ping" cx="{ping_cx}" cy="{ping_cy}" r="3.5">'
+        f'<animate attributeName="r" values="3.5;11;3.5" dur="2.2s" '
+        f'begin="{d0}s" repeatCount="indefinite" />'
+        f'<animate attributeName="opacity" values="0.5;0;0.5" dur="2.2s" '
+        f'begin="{d0}s" repeatCount="indefinite" />'
+        f"</circle>"
+    )
+
     svg = []
     svg.append(svg_open(w, h))
     svg.append(f"<style>{font_css}")
     svg.append(
         """
         .chip-dot { fill: %s; }
+        .chip-ping { fill: none; stroke: %s; stroke-width: 1.5; }
         .chip-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; fill: %s; }
         .name1 { font-family: '%s-Roman', Georgia, serif; font-size: 52px; font-weight: 600; fill: %s; }
         .name2 { font-family: '%s-Italic', Georgia, serif; font-style: italic; font-size: 52px; font-weight: 600; fill: %s; }
         .tagline { font-size: 15px; font-weight: 500; fill: %s; }
         .website { font-size: 14px; font-weight: 700; fill: %s; }
+        .accent-bar { fill: url(#accentGrad); }
+        .blob { opacity: 0.16; filter: blur(22px); }
         @keyframes nudge {
           0%%, 100%% { transform: translate(0,0); }
           50%% { transform: translate(4px,0); }
         }
+        @keyframes breathe {
+          0%%, 100%% { transform: scale(1); }
+          50%% { transform: scale(1.015); }
+        }
         .link-arrow { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
+        .art-breathe { animation: breathe 5s ease-in-out infinite; animation-delay: %ss;
+                        transform-origin: %spx %spx; }
         """
         % (
             BLUE, BLUE,
+            BLUE,
             SERIF_FAMILY, text_color,
             SERIF_FAMILY, text_color,
             muted_color,
             BLUE,
             d4 + 0.6,
+            d5 + 1.0, art_cx, art_cy,
         )
     )
     svg.append(
@@ -355,19 +408,32 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
             CARD_REVEAL_PIN
             + """
       .link-arrow { transform: none !important; }
+      .art-breathe { transform: none !important; }
+      .blob { display: none !important; }
+      .chip-ping { display: none !important; }
+      .accent-bar { width: %spx !important; }
     """
+            % bar_w_final
         )
     )
     svg.append("</style>")
 
+    svg.append(
+        f'<defs><linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="0">'
+        f'<stop offset="0%" stop-color="{BLUE}" /><stop offset="50%" stop-color="{RED}" />'
+        f'<stop offset="100%" stop-color="{YELLOW}" /></linearGradient></defs>'
+    )
     svg.append(f'<rect width="{w}" height="{h}" fill="{bg}" rx="18" />')
 
-    left_x = 48
+    if ascii_data:
+        svg.extend(blobs)
+
     content = []
 
     content.append(
         f'<g opacity="{chip_op}">{chip_f}{chip_m}'
         f'<rect class="chip-dot" x="{left_x}" y="38" width="7" height="7" rx="2" />'
+        f"{ping}"
         f'<text class="chip-label" x="{left_x+16}" y="45">{esc(chip_label)}</text>'
         f"</g>"
     )
@@ -378,6 +444,10 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     content.append(
         f'<text class="name2" x="{left_x-3}" y="168" opacity="{n2_op}">'
         f"{esc(name2)}{n2_f}{n2_m}</text>"
+    )
+    content.append(
+        f'<rect class="accent-bar" x="{left_x}" y="178" width="{bar_w_now}" height="4" rx="2">'
+        f"{bar_anim}</rect>"
     )
     content.append(
         f'<text class="tagline" x="{left_x}" y="205" opacity="{tag_op}">'
@@ -392,14 +462,13 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     )
 
     if ascii_data:
-        art_size = 220
-        art_x, art_y = w - art_size - 36, (h - art_size) // 2
         content.append(
-            f'<g opacity="{art_op}" style="transform-origin: {art_x+art_size/2}px {art_y+art_size/2}px;">'
+            f'<g opacity="{art_op}" style="transform-origin: {art_cx}px {art_cy}px;">'
             f"{art_fade}{art_anim}"
+            f'<g class="art-breathe">'
             f'<image href="{ascii_data}" x="{art_x}" y="{art_y}" '
             f'width="{art_size}" height="{art_size}" />'
-            f"</g>"
+            f"</g></g>"
         )
 
     svg.extend(content)
@@ -428,9 +497,24 @@ def render_tile(link: dict, index: int, base_delay: float = 0.0) -> str:
     font_css += font_face_css(label + desc, SANS_FONT_PATH, SANS_FAMILY, 500)
     font_css += font_face_css(headline, SERIF_ITALIC_FONT_PATH, SERIF_FAMILY, 500)
 
+    shimmer_dur = 2.8
+    shimmer_begin = delay + 1.0
+    shimmer = "" if STATIC else (
+        f'<clipPath id="tileclip-{index}"><rect width="{w}" height="{h}" rx="18" /></clipPath>'
+        f'<g clip-path="url(#tileclip-{index})">'
+        f'<g class="shimmer-move">'
+        f'<animateTransform attributeName="transform" type="translate" '
+        f'from="-140 0" to="{w+140} 0" dur="{shimmer_dur}s" begin="{shimmer_begin}s" '
+        f'repeatCount="indefinite" />'
+        f'<rect class="shimmer" x="0" y="-30" width="60" height="{h+60}" transform="skewX(-18)" />'
+        f"</g></g>"
+    )
+
     body = (
         f'<rect class="tile-bg" x="0" y="0" width="{w}" height="{h}" rx="18" />'
-        f'<text class="tile-label" x="24" y="34">{esc(label)}</text>'
+        f'<rect class="tile-glow" x="1.5" y="1.5" width="{w-3}" height="{h-3}" rx="16.5" />'
+        + shimmer
+        + f'<text class="tile-label" x="24" y="34">{esc(label)}</text>'
         f'<g class="arrow-g"><text class="arrow" x="{w-36}" y="34">\u2192</text></g>'
         f'<text class="tile-headline" x="24" y="100">{esc(headline)}</text>'
         f'<text class="tile-desc" x="24" y="{h-40}">'
@@ -444,6 +528,8 @@ def render_tile(link: dict, index: int, base_delay: float = 0.0) -> str:
     svg.append(
         """
         .tile-bg { fill: %s; }
+        .tile-glow { fill: none; stroke: #ffffff; stroke-opacity: 0; stroke-width: 2; }
+        .shimmer { fill: #ffffff; opacity: 0.18; }
         .tile-label { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; fill: %s; }
         .tile-headline { font-family: '%s', Georgia, serif; font-style: italic; font-size: 26px; font-weight: 500; fill: %s; }
         .tile-desc { font-size: 13px; font-weight: 500; fill: %s; opacity: 0.85; }
@@ -452,15 +538,22 @@ def render_tile(link: dict, index: int, base_delay: float = 0.0) -> str:
           0%%, 100%% { transform: translate(0,0); }
           50%% { transform: translate(4px,0); }
         }
+        @keyframes glowpulse {
+          0%%, 100%% { stroke-opacity: 0; }
+          50%% { stroke-opacity: 0.45; }
+        }
         .arrow-g { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
+        .tile-glow { animation: glowpulse 2.4s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (color, fg, SERIF_FAMILY, fg, fg, fg, delay + 0.8)
+        % (color, fg, SERIF_FAMILY, fg, fg, fg, delay + 0.8, delay + 0.9)
     )
     svg.append(
         reduced_motion_css(
             CARD_REVEAL_PIN
             + """
       .arrow-g { transform: none !important; }
+      .tile-glow { stroke-opacity: 0 !important; }
+      .shimmer-move { display: none !important; }
     """
         )
     )
