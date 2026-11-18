@@ -241,6 +241,17 @@ def animate(attr: str, frm: str, to: str, dur: float, begin: float, fill="freeze
     )
 
 
+def animate_values(attr: str, values: str, key_times: str, dur: float, begin: float, fill="freeze") -> str:
+    """Multi-keyframe SMIL <animate> (e.g. an overshoot-then-settle bounce). Skipped in STATIC mode."""
+    if STATIC:
+        return ""
+    return (
+        f'<animate attributeName="{attr}" values="{values}" keyTimes="{key_times}" '
+        f'dur="{dur}s" begin="{begin}s" fill="{fill}" '
+        f'calcMode="spline" keySplines="0.33 1 0.68 1;0.33 1 0.68 1" />'
+    )
+
+
 def static_or(final, during):
     """Return the already-settled value in STATIC mode, else the mid-animation one."""
     return final if STATIC else during
@@ -275,95 +286,93 @@ CARD_REVEAL_PIN = """
 # ---------------------------------------------------------------------------
 
 def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
-    w, h = 800, 280
+    """
+    Bold magazine-style hero: the name IS the design. Huge, tight-set,
+    two-tone type dominates the card; everything else (kicker, tagline,
+    link) stays small and out of the way. The ASCII portrait shrinks down
+    to a small rotated "stamp" in the corner instead of a big photo block.
+    Each name line is unveiled by a solid colour bar sliding off to the
+    right — the same "curtain" reveal language used on the repo cards.
+    """
+    w, h = 800, 320
     left_x = 48
     is_light = mode == "light"
 
     bg = CREAM if is_light else BG
     text_color = INK if is_light else TEXT
     muted_color = INK_MUTED if is_light else MUTED
-    chip_bg = "#E7ECFF" if is_light else "#131a33"
-    ascii_ink = INK if is_light else "#e8eaf0"
 
     chip_label = profile["chip_label"]
-    name1 = profile["name_line1"]
-    name2 = profile["name_line2"]
+    name1 = profile["name_line1"].upper()
+    name2 = profile["name_line2"].upper()
     tagline = profile["tagline"]
     website_label = profile["website_label"]
     website_url = profile["website_url"]
+    ascii_ink = INK if is_light else "#e8eaf0"
 
     all_text = chip_label + name1 + name2 + tagline + website_label
-    font_css = font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 700)
+    font_css = font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 900)
+    font_css += font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 700)
     font_css += font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 500)
-    font_css += font_face_css(name1, SERIF_ROMAN_FONT_PATH, SERIF_FAMILY + "-Roman", 600)
-    font_css += font_face_css(name2, SERIF_ITALIC_FONT_PATH, SERIF_FAMILY + "-Italic", 600)
 
     ascii_data = embed_ascii_art(profile.get("ascii_art", ""), ascii_ink)
 
-    # staggered entrance: chip -> name line 1 -> name line 2 -> tagline -> link -> art
-    d0 = base_delay
-    d1 = base_delay + 0.15
-    d2 = base_delay + 0.30
-    d3 = base_delay + 0.48
-    d4 = base_delay + 0.62
-    d5 = base_delay + 0.25
+    # --- staggered beats: kicker -> NAME1 wipe -> NAME2 wipe -> tagline -> link -> stamp
+    d_kicker = base_delay
+    d_name1 = base_delay + 0.15
+    d_name2 = base_delay + 0.45
+    d_tag = base_delay + 0.85
+    d_link = base_delay + 1.0
+    d_stamp = base_delay + 0.5
 
-    def fade_rise(delay, rise=12, dur=0.6):
+    def fade_rise(delay, rise=10, dur=0.55):
         op = static_or("1", "0")
         f = animate("opacity", "0", "1", dur, delay)
         m = animate("transform", f"translate(0,{rise})", "translate(0,0)", dur, delay)
         return op, f, m
 
-    chip_op, chip_f, chip_m = fade_rise(d0, 8)
-    n1_op, n1_f, n1_m = fade_rise(d1, 16)
-    n2_op, n2_f, n2_m = fade_rise(d2, 16)
-    tag_op, tag_f, tag_m = fade_rise(d3, 10)
-    link_op, link_f, link_m = fade_rise(d4, 8)
+    kicker_op, kicker_f, kicker_m = fade_rise(d_kicker, 6)
+    tag_op, tag_f, tag_m = fade_rise(d_tag, 8)
+    link_op, link_f, link_m = fade_rise(d_link, 6)
 
-    art_op = static_or("1", "0")
-    art_fade = animate("opacity", "0", "1", 0.9, d5)
-    art_scale_from = "scale(0.94)"
-    art_anim = animate("transform", art_scale_from, "scale(1)", 0.9, d5)
+    name_size = 92
+    name1_y = 150
+    name2_y = 240
 
-    # gradient accent bar under the name — draws in once, then idles
-    bar_w_final = 90
-    bar_w_now = static_or(str(bar_w_final), "0")
-    bar_delay = d3
-    bar_anim = animate("width", "0", str(bar_w_final), 0.7, bar_delay)
-
-    art_size = 220
-    art_x, art_y = w - art_size - 36, (h - art_size) // 2
-    art_cx, art_cy = art_x + art_size / 2, art_y + art_size / 2
-
-    # soft floating colour blobs behind the ascii art, each on its own slow loop
-    blob_specs = [
-        (BLUE, art_x - 25, art_y - 25, 65, 4.6, 0.0),
-        (RED, art_x + art_size + 15, art_y + art_size + 10, 55, 5.4, 0.6),
-        (YELLOW, art_x - 15, art_y + art_size + 25, 50, 5.0, 1.1),
-    ]
-    blobs = []
-    for color, bx, by, br, dur, phase in blob_specs:
-        blob_anim = "" if STATIC else (
-            f'<animateTransform attributeName="transform" type="translate" '
-            f'values="0,0; 0,-10; 0,0" keyTimes="0;0.5;1" dur="{dur}s" '
-            f'begin="{d5 + phase}s" repeatCount="indefinite" '
-            f'calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" />'
+    def wipe_cover(x, y_top, width, height, color, delay, dur=0.6):
+        """A solid bar sitting over a name line that slides fully off to
+        the right, unveiling the big text underneath as it passes."""
+        if STATIC:
+            return ""
+        x_now = x  # irrelevant in STATIC (never rendered there)
+        slide = (
+            f'<animate attributeName="x" from="{x}" to="{x + width + 60}" '
+            f'dur="{dur}s" begin="{delay}s" fill="freeze" calcMode="spline" '
+            f'keyTimes="0;1" keySplines="{EASE}" />'
         )
-        blobs.append(
-            f'<g class="blob">{blob_anim}'
-            f'<circle cx="{bx}" cy="{by}" r="{br}" fill="{color}" opacity="0.16" />'
-            f"</g>"
+        return (
+            f'<rect class="wipe" x="{x}" y="{y_top}" width="{width}" '
+            f'height="{height}" fill="{color}">{slide}</rect>'
         )
 
-    # pulsing "live" ring around the chip dot
-    ping_cx, ping_cy = left_x + 3.5, 41.5
-    ping = "" if STATIC else (
-        f'<circle class="chip-ping" cx="{ping_cx}" cy="{ping_cy}" r="3.5">'
-        f'<animate attributeName="r" values="3.5;11;3.5" dur="2.2s" '
-        f'begin="{d0}s" repeatCount="indefinite" />'
-        f'<animate attributeName="opacity" values="0.5;0;0.5" dur="2.2s" '
-        f'begin="{d0}s" repeatCount="indefinite" />'
-        f"</circle>"
+    name1_wipe = wipe_cover(left_x - 10, name1_y - 78, 480, 100, BLUE, d_name1)
+    name2_wipe = wipe_cover(left_x - 10, name2_y - 78, 480, 100, RED, d_name2)
+
+    # stamp: small rotated ascii badge, bottom-right, dropped in with a
+    # little overshoot rotation like a rubber stamp hitting paper
+    stamp_size = 108
+    stamp_x, stamp_y = w - stamp_size - 44, h - stamp_size - 36
+    stamp_cx, stamp_cy = stamp_x + stamp_size / 2, stamp_y + stamp_size / 2
+    stamp_rotate_final = -7
+    stamp_op = static_or("1", "0")
+    stamp_fade = animate("opacity", "0", "1", 0.5, d_stamp)
+    stamp_rot_now = static_or(str(stamp_rotate_final), "14")
+    stamp_rot_anim = "" if STATIC else (
+        f'<animateTransform attributeName="transform" type="rotate" '
+        f'values="18 {stamp_cx} {stamp_cy}; {stamp_rotate_final - 3} {stamp_cx} {stamp_cy}; '
+        f'{stamp_rotate_final} {stamp_cx} {stamp_cy}" keyTimes="0;0.7;1" '
+        f'dur="0.6s" begin="{d_stamp}s" fill="freeze" calcMode="spline" '
+        f'keySplines="0.33 1 0.68 1;0.33 1 0.68 1" />'
     )
 
     svg = []
@@ -372,106 +381,88 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     svg.append(
         """
         .chip-dot { fill: %s; }
-        .chip-ping { fill: none; stroke: %s; stroke-width: 1.5; }
         .chip-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; fill: %s; }
-        .name1 { font-family: '%s-Roman', Georgia, serif; font-size: 52px; font-weight: 600; fill: %s; }
-        .name2 { font-family: '%s-Italic', Georgia, serif; font-style: italic; font-size: 52px; font-weight: 600; fill: %s; }
+        .name-big { font-weight: 900; letter-spacing: -2px; text-transform: uppercase; }
+        .name1 { fill: %s; }
+        .name2 { fill: url(#accentGrad); }
         .tagline { font-size: 15px; font-weight: 500; fill: %s; }
         .website { font-size: 14px; font-weight: 700; fill: %s; }
-        .accent-bar { fill: url(#accentGrad); }
-        .blob { opacity: 0.16; filter: blur(22px); }
+        .stamp-ring { fill: none; stroke: %s; stroke-width: 2; stroke-dasharray: 5 4; }
+        .stamp-bg { fill: %s; }
         @keyframes nudge {
           0%%, 100%% { transform: translate(0,0); }
           50%% { transform: translate(4px,0); }
         }
-        @keyframes breathe {
-          0%%, 100%% { transform: scale(1); }
-          50%% { transform: scale(1.015); }
-        }
         .link-arrow { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
-        .art-breathe { animation: breathe 5s ease-in-out infinite; animation-delay: %ss;
-                        transform-origin: %spx %spx; }
         """
-        % (
-            BLUE, BLUE,
-            BLUE,
-            SERIF_FAMILY, text_color,
-            SERIF_FAMILY, text_color,
-            muted_color,
-            BLUE,
-            d4 + 0.6,
-            d5 + 1.0, art_cx, art_cy,
-        )
+        % (BLUE, BLUE, text_color, muted_color, BLUE, BLUE, PANEL if not is_light else "#ffffff", d_link + 0.6)
     )
     svg.append(
         reduced_motion_css(
-            CARD_REVEAL_PIN
-            + """
+            """
+      .kicker-g, .tag-g, .link-g { opacity: 1 !important; transform: none !important; }
       .link-arrow { transform: none !important; }
-      .art-breathe { transform: none !important; }
-      .blob { display: none !important; }
-      .chip-ping { display: none !important; }
-      .accent-bar { width: %spx !important; }
+      .wipe { display: none !important; }
+      .stamp-g { opacity: 1 !important; transform: rotate(%sdeg %spx %spx) !important; }
     """
-            % bar_w_final
+            % (stamp_rotate_final, stamp_cx, stamp_cy)
         )
     )
     svg.append("</style>")
 
     svg.append(
         f'<defs><linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="0">'
-        f'<stop offset="0%" stop-color="{BLUE}" /><stop offset="50%" stop-color="{RED}" />'
+        f'<stop offset="0%" stop-color="{BLUE}" /><stop offset="55%" stop-color="{RED}" />'
         f'<stop offset="100%" stop-color="{YELLOW}" /></linearGradient></defs>'
     )
     svg.append(f'<rect width="{w}" height="{h}" fill="{bg}" rx="18" />')
 
-    if ascii_data:
-        svg.extend(blobs)
-
-    content = []
-
-    content.append(
-        f'<g opacity="{chip_op}">{chip_f}{chip_m}'
-        f'<rect class="chip-dot" x="{left_x}" y="38" width="7" height="7" rx="2" />'
-        f"{ping}"
-        f'<text class="chip-label" x="{left_x+16}" y="45">{esc(chip_label)}</text>'
+    svg.append(
+        f'<g class="kicker-g" opacity="{kicker_op}">{kicker_f}{kicker_m}'
+        f'<rect class="chip-dot" x="{left_x}" y="40" width="7" height="7" rx="2" />'
+        f'<text class="chip-label" x="{left_x+16}" y="47">{esc(chip_label)}</text>'
         f"</g>"
     )
-    content.append(
-        f'<text class="name1" x="{left_x-3}" y="112" opacity="{n1_op}">'
-        f"{esc(name1)}{n1_f}{n1_m}</text>"
+
+    # the big names are drawn first (always visible), then the wipe bars
+    # are painted on top — each wipe slides away to unveil the line below it
+    svg.append(
+        f'<text class="name-big name1" x="{left_x-4}" y="{name1_y}" '
+        f'font-size="{name_size}">{esc(name1)}</text>'
     )
-    content.append(
-        f'<text class="name2" x="{left_x-3}" y="168" opacity="{n2_op}">'
-        f"{esc(name2)}{n2_f}{n2_m}</text>"
+    svg.append(
+        f'<text class="name-big name2" x="{left_x-4}" y="{name2_y}" '
+        f'font-size="{name_size}">{esc(name2)}</text>'
     )
-    content.append(
-        f'<rect class="accent-bar" x="{left_x}" y="178" width="{bar_w_now}" height="4" rx="2">'
-        f"{bar_anim}</rect>"
+    svg.append(name1_wipe)
+    svg.append(name2_wipe)
+
+    svg.append(
+        f'<text class="tagline tag-g" x="{left_x}" y="266" opacity="{tag_op}">'
+        f"{wrap_tspan(tagline, left_x, 266, 50, 2)}{tag_f}{tag_m}</text>"
     )
-    content.append(
-        f'<text class="tagline" x="{left_x}" y="205" opacity="{tag_op}">'
-        f"{wrap_tspan(tagline, left_x, 205, 46, 2)}{tag_f}{tag_m}</text>"
-    )
-    content.append(
+    svg.append(
         f'<a href="{esc(website_url)}" target="_blank">'
-        f'<g opacity="{link_op}">{link_f}{link_m}'
-        f'<text class="website" x="{left_x}" y="248">{esc(website_label)}'
+        f'<g class="link-g" opacity="{link_op}">{link_f}{link_m}'
+        f'<text class="website" x="{left_x}" y="308">{esc(website_label)}'
         f'<tspan class="link-arrow"> \u2192</tspan></text>'
         f"</g></a>"
     )
 
     if ascii_data:
-        content.append(
-            f'<g opacity="{art_op}" style="transform-origin: {art_cx}px {art_cy}px;">'
-            f"{art_fade}{art_anim}"
-            f'<g class="art-breathe">'
-            f'<image href="{ascii_data}" x="{art_x}" y="{art_y}" '
-            f'width="{art_size}" height="{art_size}" />'
-            f"</g></g>"
+        svg.append(
+            f'<g class="stamp-g" opacity="{stamp_op}" '
+            f'transform="rotate({stamp_rot_now} {stamp_cx} {stamp_cy})">'
+            f"{stamp_fade}{stamp_rot_anim}"
+            f'<rect class="stamp-bg" x="{stamp_x}" y="{stamp_y}" '
+            f'width="{stamp_size}" height="{stamp_size}" rx="10" />'
+            f'<rect class="stamp-ring" x="{stamp_x+6}" y="{stamp_y+6}" '
+            f'width="{stamp_size-12}" height="{stamp_size-12}" rx="6" />'
+            f'<image href="{ascii_data}" x="{stamp_x+12}" y="{stamp_y+12}" '
+            f'width="{stamp_size-24}" height="{stamp_size-24}" />'
+            f"</g>"
         )
 
-    svg.extend(content)
     svg.append("</svg>")
     return "".join(svg)
 
@@ -612,6 +603,7 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
 
     bars = []
     labels = []
+    bar_pins = []  # per-bar reduced-motion overrides (final height/y differ per bar)
     for i, (m, v) in enumerate(zip(months, values)):
         x = chart_left + i * (bar_w + bar_gap)
         bar_h = (v / max_v) * (chart_bottom - chart_top)
@@ -619,11 +611,24 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
         delay = base_delay + 0.3 + i * 0.06
         h_final = static_or(str(bar_h), "0")
         y_final = static_or(str(y), str(chart_bottom))
-        h_anim = animate("height", "0", str(bar_h), 0.6, delay)
-        y_anim = animate("y", str(chart_bottom), str(y), 0.6, delay)
+
+        # grow past the final height slightly, then settle — a small
+        # bounce instead of a flat linear grow
+        overshoot_h = bar_h * 1.1
+        overshoot_y = chart_bottom - overshoot_h
+        h_anim = animate_values(
+            "height", f"0;{overshoot_h:.1f};{bar_h:.1f}", "0;0.7;1", 0.65, delay
+        )
+        y_anim = animate_values(
+            "y", f"{chart_bottom};{overshoot_y:.1f};{y:.1f}", "0;0.7;1", 0.65, delay
+        )
+        bar_id = f"bar-{i}"
         bars.append(
-            f'<rect class="bar" x="{x:.1f}" y="{y_final}" width="{bar_w:.1f}" '
+            f'<rect id="{bar_id}" class="bar" x="{x:.1f}" y="{y_final}" width="{bar_w:.1f}" '
             f'height="{h_final}" rx="3">{h_anim}{y_anim}</rect>'
+        )
+        bar_pins.append(
+            f'#{bar_id} {{ height: {bar_h:.1f}px !important; y: {y:.1f}px !important; }}'
         )
         labels.append(
             f'<text class="month" x="{x + bar_w/2:.1f}" y="{chart_bottom + 18}" '
@@ -682,6 +687,7 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
       .streak-flame { opacity: 1 !important; }
       .card-title { opacity: 1 !important; }
     """
+            + "\n      " + "\n      ".join(bar_pins)
         )
     )
     svg.append("</style>")
@@ -696,26 +702,28 @@ def render_chart(stats: dict, base_delay: float = 0.0) -> str:
 # ---------------------------------------------------------------------------
 
 def render_repo_card(repo: dict, index: int, base_delay: float = 0.0) -> str:
+    """
+    Content is drawn fully-formed and static. A solid colour bar covers
+    the whole card at the start and then shrinks down into the slim left
+    accent strip, "unwrapping" the repo like a curtain pulling back —
+    rather than the text itself fading or sliding.
+    """
     w, h = 800, 150
     name = repo["name"]
     desc = repo["description"]
     stack = repo["stack"]
     url = repo["url"]
     color = PALETTE[index % len(PALETTE)]
-    delay = base_delay + index * 0.22
+    delay = base_delay + index * 0.28
 
     font_css = font_face_css(name + desc + stack, SANS_FONT_PATH, SANS_FAMILY, 700)
     font_css += font_face_css(name + desc + stack, SANS_FONT_PATH, SANS_FAMILY, 400)
 
-    body = (
-        f'<rect class="repo-bg" x="2" y="2" width="{w-4}" height="{h-4}" rx="14" />'
-        f'<rect class="accent-bar" x="2" y="2" width="6" height="{h-4}" rx="3" />'
-        f'<text class="repo-name" x="40" y="48">{esc(name)}</text>'
-        f'<text class="repo-desc" x="40" y="78">'
-        + wrap_tspan(desc, 40, 78, 95, 2)
-        + "</text>"
-        f'<text class="repo-stack" x="40" y="124">{esc(stack)}</text>'
-    )
+    final_w, final_rx = 6, 3
+    curtain_w_now = static_or(str(final_w), str(w - 4))
+    curtain_rx_now = static_or(str(final_rx), "14")
+    curtain_w_anim = animate("width", str(w - 4), str(final_w), 0.75, delay)
+    curtain_rx_anim = animate("rx", "14", str(final_rx), 0.75, delay)
 
     svg = []
     svg.append(svg_open(w, h))
@@ -726,26 +734,38 @@ def render_repo_card(repo: dict, index: int, base_delay: float = 0.0) -> str:
         .repo-name { font-size: 20px; font-weight: 700; fill: %s; }
         .repo-desc { font-size: 13px; fill: %s; }
         .repo-stack { font-size: 12px; fill: %s; }
-        .accent-bar { fill: %s; }
+        .curtain { fill: %s; }
         @keyframes drift {
           0%%, 100%% { opacity: 0.5; }
           50%% { opacity: 1; }
         }
-        .accent-bar { animation: drift 2.6s ease-in-out infinite; animation-delay: %ss; }
+        .curtain { animation: drift 2.6s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (PANEL, BORDER, TEXT, MUTED, color, color, delay + 0.7)
+        % (PANEL, BORDER, TEXT, MUTED, color, color, delay + 1.0)
     )
     svg.append(
         reduced_motion_css(
-            CARD_REVEAL_PIN
-            + """
-      .accent-bar { opacity: 1 !important; }
+            """
+      .curtain { opacity: 1 !important; width: %spx !important; rx: %spx !important; }
     """
+            % (final_w, final_rx)
         )
     )
     svg.append("</style>")
 
-    svg.append(f'<a href="{esc(url)}" target="_blank">' + reveal_wrap(body, delay, rise=14) + "</a>")
+    svg.append(f'<a href="{esc(url)}" target="_blank"><g>')
+    svg.append(f'<rect class="repo-bg" x="2" y="2" width="{w-4}" height="{h-4}" rx="14" />')
+    svg.append(f'<text class="repo-name" x="40" y="48">{esc(name)}</text>')
+    svg.append(
+        f'<text class="repo-desc" x="40" y="78">' + wrap_tspan(desc, 40, 78, 95, 2) + "</text>"
+    )
+    svg.append(f'<text class="repo-stack" x="40" y="124">{esc(stack)}</text>')
+    # curtain painted last so it sits on top of everything above, then shrinks away
+    svg.append(
+        f'<rect class="curtain" x="2" y="2" width="{curtain_w_now}" height="{h-4}" '
+        f'rx="{curtain_rx_now}">{curtain_w_anim}{curtain_rx_anim}</rect>'
+    )
+    svg.append("</g></a>")
     svg.append("</svg>")
     return "".join(svg)
 
@@ -794,6 +814,22 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
     title_op = static_or("1", "0")
     title_fade = animate("opacity", "0", "1", 0.5, base_delay)
 
+    # one-shot diagonal light sweep across the grid, once the cell wave lands
+    grid_w = weeks * (cell + gap) - gap
+    grid_h = days * (cell + gap) - gap
+    sweep_delay = base_delay + 0.3 + weeks * 0.018 + 0.25
+    sweep = "" if STATIC else (
+        f'<clipPath id="gridclip"><rect x="{origin_x}" y="{origin_y}" '
+        f'width="{grid_w}" height="{grid_h}" rx="2" /></clipPath>'
+        f'<g clip-path="url(#gridclip)"><g class="grid-sweep-move">'
+        f'<animateTransform attributeName="transform" type="translate" '
+        f'from="0 0" to="{grid_w + 120} 0" dur="0.9s" begin="{sweep_delay}s" '
+        f'fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="{EASE}" />'
+        f'<rect class="grid-sweep" x="{origin_x-60}" y="{origin_y-20}" '
+        f'width="50" height="{grid_h+40}" transform="skewX(-18)" />'
+        f"</g></g>"
+    )
+
     svg = []
     svg.append(svg_open(w, h))
     svg.append(f"<style>{font_css}")
@@ -806,6 +842,7 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
         .lvl2 { fill: %s; fill-opacity: 0.55; }
         .lvl3 { fill: %s; fill-opacity: 0.75; }
         .lvl4 { fill: %s; fill-opacity: 1; }
+        .grid-sweep { fill: #ffffff; opacity: 0.25; }
         """
         % (TEXT, MUTED, PANEL, BLUE, BLUE, BLUE, BLUE)
     )
@@ -814,6 +851,7 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
             """
       .cell { opacity: 1 !important; }
       .cg-title { opacity: 1 !important; }
+      .grid-sweep-move { display: none !important; }
     """
         )
     )
@@ -824,6 +862,7 @@ def render_contrib_graph(stats: dict, base_delay: float = 0.0) -> str:
         f"Contribution activity{title_fade}</text>"
     )
     svg.extend(cells)
+    svg.append(sweep)
 
     legend_x = w - 160
     legend_y = h - 20
