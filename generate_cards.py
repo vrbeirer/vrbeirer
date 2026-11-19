@@ -287,93 +287,64 @@ CARD_REVEAL_PIN = """
 
 def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
     """
-    Bold magazine-style hero: the name IS the design. Huge, tight-set,
-    two-tone type dominates the card; everything else (kicker, tagline,
-    link) stays small and out of the way. The ASCII portrait shrinks down
-    to a small rotated "stamp" in the corner instead of a big photo block.
-    Each name line is unveiled by a solid colour bar sliding off to the
-    right — the same "curtain" reveal language used on the repo cards.
+    Deliberately minimal, matching a reference profile card: a plain
+    cream/black panel, a small dot+label kicker, two tight-set serif name
+    lines (roman then italic, same colour, same size), a short
+    description, a small text link, and the ASCII portrait sitting large
+    on the right. No extra ornament — the type and the art carry it.
     """
-    w, h = 800, 320
-    left_x = 48
+    w, h = 800, 300
+    left_x = 50
     is_light = mode == "light"
 
     bg = CREAM if is_light else BG
     text_color = INK if is_light else TEXT
     muted_color = INK_MUTED if is_light else MUTED
+    link_color = BLUE
+    ascii_ink = INK if is_light else "#e8eaf0"
 
     chip_label = profile["chip_label"]
-    name1 = profile["name_line1"].upper()
-    name2 = profile["name_line2"].upper()
+    name1 = profile["name_line1"]
+    name2 = profile["name_line2"]
     tagline = profile["tagline"]
     website_label = profile["website_label"]
     website_url = profile["website_url"]
-    ascii_ink = INK if is_light else "#e8eaf0"
 
     all_text = chip_label + name1 + name2 + tagline + website_label
-    font_css = font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 900)
-    font_css += font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 700)
+    font_css = font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 700)
     font_css += font_face_css(all_text, SANS_FONT_PATH, SANS_FAMILY, 500)
+    font_css += font_face_css(name1, SERIF_ROMAN_FONT_PATH, SERIF_FAMILY + "-Roman", 500)
+    font_css += font_face_css(name2, SERIF_ITALIC_FONT_PATH, SERIF_FAMILY + "-Italic", 500)
 
     ascii_data = embed_ascii_art(profile.get("ascii_art", ""), ascii_ink)
 
-    # --- staggered beats: kicker -> NAME1 wipe -> NAME2 wipe -> tagline -> link -> stamp
-    d_kicker = base_delay
+    # simple staggered reveal, top to bottom — no extra ornament
+    d_chip = base_delay
     d_name1 = base_delay + 0.15
-    d_name2 = base_delay + 0.45
-    d_tag = base_delay + 0.85
-    d_link = base_delay + 1.0
-    d_stamp = base_delay + 0.5
+    d_name2 = base_delay + 0.32
+    d_tag = base_delay + 0.55
+    d_link = base_delay + 0.72
+    d_art = base_delay + 0.25
 
-    def fade_rise(delay, rise=10, dur=0.55):
+    def fade_rise(delay, rise=12, dur=0.6):
         op = static_or("1", "0")
         f = animate("opacity", "0", "1", dur, delay)
         m = animate("transform", f"translate(0,{rise})", "translate(0,0)", dur, delay)
         return op, f, m
 
-    kicker_op, kicker_f, kicker_m = fade_rise(d_kicker, 6)
+    chip_op, chip_f, chip_m = fade_rise(d_chip, 6)
+    n1_op, n1_f, n1_m = fade_rise(d_name1, 14)
+    n2_op, n2_f, n2_m = fade_rise(d_name2, 14)
     tag_op, tag_f, tag_m = fade_rise(d_tag, 8)
     link_op, link_f, link_m = fade_rise(d_link, 6)
 
-    name_size = 92
-    name1_y = 150
-    name2_y = 240
-
-    def wipe_cover(x, y_top, width, height, color, delay, dur=0.6):
-        """A solid bar sitting over a name line that slides fully off to
-        the right, unveiling the big text underneath as it passes."""
-        if STATIC:
-            return ""
-        x_now = x  # irrelevant in STATIC (never rendered there)
-        slide = (
-            f'<animate attributeName="x" from="{x}" to="{x + width + 60}" '
-            f'dur="{dur}s" begin="{delay}s" fill="freeze" calcMode="spline" '
-            f'keyTimes="0;1" keySplines="{EASE}" />'
-        )
-        return (
-            f'<rect class="wipe" x="{x}" y="{y_top}" width="{width}" '
-            f'height="{height}" fill="{color}">{slide}</rect>'
-        )
-
-    name1_wipe = wipe_cover(left_x - 10, name1_y - 78, 480, 100, BLUE, d_name1)
-    name2_wipe = wipe_cover(left_x - 10, name2_y - 78, 480, 100, RED, d_name2)
-
-    # stamp: small rotated ascii badge, bottom-right, dropped in with a
-    # little overshoot rotation like a rubber stamp hitting paper
-    stamp_size = 108
-    stamp_x, stamp_y = w - stamp_size - 44, h - stamp_size - 36
-    stamp_cx, stamp_cy = stamp_x + stamp_size / 2, stamp_y + stamp_size / 2
-    stamp_rotate_final = -7
-    stamp_op = static_or("1", "0")
-    stamp_fade = animate("opacity", "0", "1", 0.5, d_stamp)
-    stamp_rot_now = static_or(str(stamp_rotate_final), "14")
-    stamp_rot_anim = "" if STATIC else (
-        f'<animateTransform attributeName="transform" type="rotate" '
-        f'values="18 {stamp_cx} {stamp_cy}; {stamp_rotate_final - 3} {stamp_cx} {stamp_cy}; '
-        f'{stamp_rotate_final} {stamp_cx} {stamp_cy}" keyTimes="0;0.7;1" '
-        f'dur="0.6s" begin="{d_stamp}s" fill="freeze" calcMode="spline" '
-        f'keySplines="0.33 1 0.68 1;0.33 1 0.68 1" />'
-    )
+    art_size = 240
+    art_x, art_y = w - art_size - 44, (h - art_size) // 2
+    art_cx, art_cy = art_x + art_size / 2, art_y + art_size / 2
+    art_op = static_or("1", "0")
+    art_fade = animate("opacity", "0", "1", 0.8, d_art)
+    art_scale_now = static_or("1", "0.96")
+    art_anim = animate("transform", "scale(0.96)", "scale(1)", 0.8, d_art)
 
     svg = []
     svg.append(svg_open(w, h))
@@ -382,84 +353,72 @@ def render_hero(profile: dict, mode: str, base_delay: float = 0.0) -> str:
         """
         .chip-dot { fill: %s; }
         .chip-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; fill: %s; }
-        .name-big { font-weight: 900; letter-spacing: -2px; text-transform: uppercase; }
-        .name1 { fill: %s; }
-        .name2 { fill: url(#accentGrad); }
+        .name1 { font-family: '%s-Roman', Georgia, serif; font-size: 54px; font-weight: 500; fill: %s; }
+        .name2 { font-family: '%s-Italic', Georgia, serif; font-style: italic; font-size: 54px; font-weight: 500; fill: %s; }
         .tagline { font-size: 15px; font-weight: 500; fill: %s; }
         .website { font-size: 14px; font-weight: 700; fill: %s; }
-        .stamp-ring { fill: none; stroke: %s; stroke-width: 2; stroke-dasharray: 5 4; }
-        .stamp-bg { fill: %s; }
         @keyframes nudge {
           0%%, 100%% { transform: translate(0,0); }
           50%% { transform: translate(4px,0); }
         }
         .link-arrow { animation: nudge 1.6s ease-in-out infinite; animation-delay: %ss; }
         """
-        % (BLUE, BLUE, text_color, muted_color, BLUE, BLUE, PANEL if not is_light else "#ffffff", d_link + 0.6)
+        % (
+            link_color, link_color,
+            SERIF_FAMILY, text_color,
+            SERIF_FAMILY, text_color,
+            muted_color,
+            link_color,
+            d_link + 0.6,
+        )
     )
     svg.append(
         reduced_motion_css(
             """
-      .kicker-g, .tag-g, .link-g { opacity: 1 !important; transform: none !important; }
+      .reveal-g { opacity: 1 !important; transform: none !important; }
       .link-arrow { transform: none !important; }
-      .wipe { display: none !important; }
-      .stamp-g { opacity: 1 !important; transform: rotate(%sdeg %spx %spx) !important; }
+      .art-g { opacity: 1 !important; transform: none !important; }
     """
-            % (stamp_rotate_final, stamp_cx, stamp_cy)
         )
     )
     svg.append("</style>")
 
-    svg.append(
-        f'<defs><linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="0">'
-        f'<stop offset="0%" stop-color="{BLUE}" /><stop offset="55%" stop-color="{RED}" />'
-        f'<stop offset="100%" stop-color="{YELLOW}" /></linearGradient></defs>'
-    )
     svg.append(f'<rect width="{w}" height="{h}" fill="{bg}" rx="18" />')
 
     svg.append(
-        f'<g class="kicker-g" opacity="{kicker_op}">{kicker_f}{kicker_m}'
+        f'<g class="reveal-g" opacity="{chip_op}">{chip_f}{chip_m}'
         f'<rect class="chip-dot" x="{left_x}" y="40" width="7" height="7" rx="2" />'
         f'<text class="chip-label" x="{left_x+16}" y="47">{esc(chip_label)}</text>'
         f"</g>"
     )
-
-    # the big names are drawn first (always visible), then the wipe bars
-    # are painted on top — each wipe slides away to unveil the line below it
     svg.append(
-        f'<text class="name-big name1" x="{left_x-4}" y="{name1_y}" '
-        f'font-size="{name_size}">{esc(name1)}</text>'
+        f'<text class="name1 reveal-g" x="{left_x-3}" y="112" opacity="{n1_op}">'
+        f"{esc(name1)}{n1_f}{n1_m}</text>"
     )
     svg.append(
-        f'<text class="name-big name2" x="{left_x-4}" y="{name2_y}" '
-        f'font-size="{name_size}">{esc(name2)}</text>'
+        f'<text class="name2 reveal-g" x="{left_x-3}" y="168" opacity="{n2_op}">'
+        f"{esc(name2)}{n2_f}{n2_m}</text>"
     )
-    svg.append(name1_wipe)
-    svg.append(name2_wipe)
-
     svg.append(
-        f'<text class="tagline tag-g" x="{left_x}" y="266" opacity="{tag_op}">'
-        f"{wrap_tspan(tagline, left_x, 266, 50, 2)}{tag_f}{tag_m}</text>"
+        f'<text class="tagline reveal-g" x="{left_x}" y="205" opacity="{tag_op}">'
+        f"{wrap_tspan(tagline, left_x, 205, 46, 2)}{tag_f}{tag_m}</text>"
     )
     svg.append(
         f'<a href="{esc(website_url)}" target="_blank">'
-        f'<g class="link-g" opacity="{link_op}">{link_f}{link_m}'
-        f'<text class="website" x="{left_x}" y="308">{esc(website_label)}'
+        f'<g class="reveal-g" opacity="{link_op}">{link_f}{link_m}'
+        f'<text class="website" x="{left_x}" y="248">{esc(website_label)}'
         f'<tspan class="link-arrow"> \u2192</tspan></text>'
         f"</g></a>"
     )
 
     if ascii_data:
         svg.append(
-            f'<g class="stamp-g" opacity="{stamp_op}" '
-            f'transform="rotate({stamp_rot_now} {stamp_cx} {stamp_cy})">'
-            f"{stamp_fade}{stamp_rot_anim}"
-            f'<rect class="stamp-bg" x="{stamp_x}" y="{stamp_y}" '
-            f'width="{stamp_size}" height="{stamp_size}" rx="10" />'
-            f'<rect class="stamp-ring" x="{stamp_x+6}" y="{stamp_y+6}" '
-            f'width="{stamp_size-12}" height="{stamp_size-12}" rx="6" />'
-            f'<image href="{ascii_data}" x="{stamp_x+12}" y="{stamp_y+12}" '
-            f'width="{stamp_size-24}" height="{stamp_size-24}" />'
+            f'<g class="art-g" opacity="{art_op}" '
+            f'style="transform-origin: {art_cx}px {art_cy}px;" '
+            f'transform="scale({art_scale_now})">'
+            f"{art_fade}{art_anim}"
+            f'<image href="{ascii_data}" x="{art_x}" y="{art_y}" '
+            f'width="{art_size}" height="{art_size}" />'
             f"</g>"
         )
 
